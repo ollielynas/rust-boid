@@ -6,13 +6,16 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-array-fu = "0.0.1-alpha"
 embedded-time = "0.12.1"
+fxhash = "0.2.1"
+rayon = "1.7.0"
 speedy2d = "1.12.0"
+static_assertions = "1.1.0"
 turborand = "0.10.0"
 
 
 [profile.release]
 lto = true
-opt-level = "z"
+opt-level = 3
 codegen-units = 1
+panic = "abort"
