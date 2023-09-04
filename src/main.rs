@@ -1,9 +1,15 @@
 use core::slice;
 use std::collections::HashMap;
 use std::time::Instant;
+use mimalloc::MiMalloc;
+
+#[global_allocator]
+static GLOBAL: MiMalloc = MiMalloc;
 
 // extern crate fxhash;
-use fxhash::FxHashMap;
+use rustc_hash::FxHashMap;
+use micromath::F32;
+use micromath::vector::{F32x2, I8x2, I32x2};
 use speedy2d::color::Color;
 
 use speedy2d::shape::Rectangle;
@@ -17,15 +23,20 @@ use rayon::prelude::*;
 const BOID_COUNT: usize = 1000;
 // if in release mode
 #[cfg(not(debug_assertions))]
-const BOID_COUNT: usize = 10000;
+const BOID_COUNT: usize = 50000;
 
 
 
-const ARENA_SIZE: f32 = 100.0;
+const ARENA_SIZE: f32 = 120.0;
 
-const BUNCH_UP: f32 = 0.3;
+const VEC_ARENA_SIZE: F32x2 = F32x2{
+    x: ARENA_SIZE,
+    y: ARENA_SIZE
+};
 
-const SPEED:f32= 0.3;
+const BUNCH_UP: f32 = 5.6;
+
+const SPEED:f32= 0.6;
 
 const BOID_SIZE : f32 = 1.0;
 
@@ -37,12 +48,21 @@ const RANDOMNESS: f32 = 40.1;
 
 const GROUP_SIZE: i32 = 15;
 
-const GROUP_SPACING: f32 = 5.1;
+const GROUP_SPACING: f32 = 1.1;
 
 const GROUP_MOVEMENT: f32 = 3.8;
 
-const CENTER_ATTRACTION: f32 = 1.1;
+// const VEC_GROUP_MOVEMENT: F32x2 = F32x2{
+//     x:GROUP_MOVEMENT,
+//     y:GROUP_MOVEMENT
+// };
 
+const CENTER_ATTRACTION: f32 = 2.1;
+
+const VEC_GROUP_SPACING: F32x2 = F32x2{
+    x: GROUP_SPACING,
+    y: GROUP_SPACING
+};
 
 
 // const ARENA_SIZE: f32 = 100.0;
@@ -71,17 +91,17 @@ const CENTER_ATTRACTION: f32 = 1.1;
 
 #[derive(Clone, Copy)]
 struct Boid {
-    position: (f32, f32),
-    velocity: (i8, i8),
-    current_point: (i32,i32)
+    position: F32x2,
+    velocity: I8x2,
+    current_point: I32x2
 }
 
 impl Boid {
     fn new() -> Boid {
         Boid {
-            position: (ARENA_SIZE/2.0, ARENA_SIZE/2.0),
-            velocity: (0, 0),
-            current_point: (-1,-1),
+            position: F32x2{x:ARENA_SIZE/2.0, y:ARENA_SIZE/2.0},
+            velocity: I8x2{x:0,y:0},
+            current_point: I32x2 {x: -1, y:-1},
         }
     }
 }
@@ -121,7 +141,7 @@ impl WindowHandler for MyWindowHandler {
         );
         
 
-
+        
         graphics.draw_rectangle(
             Rectangle::from_tuples(
                 (20.0, 20.0),
@@ -141,8 +161,6 @@ impl WindowHandler for MyWindowHandler {
 
         let mut boid = Boid::new();
 
-        let mut vx;
-        let mut vy;
 
         // create slice of self.boids
 
@@ -156,36 +174,39 @@ impl WindowHandler for MyWindowHandler {
 
             boid.clone_from(&boids_slice[i]);
             // let mut boid = self.boids[i].clone();
+            let mut v:F32x2= boid.velocity.into();
+            v *= INERTIA;
 
-            vx = boid.velocity.0 as f32 * INERTIA;
-            vy = boid.velocity.1 as f32 * INERTIA;
+            // vx = boid.velocity.0 as f32 * INERTIA;
+            // vy = boid.velocity.1 as f32 * INERTIA;
+
 
 
 
             // get pixel color at current position from texture (an array of &[u8])
 
-            let mut deflect = (0.0,0.0);
+            let mut deflect = F32x2{x:0.0,y:0.0};
             let mut nearby = vec![];
-            let here = (
-                    ((boid.position.0/ARENA_SIZE)*POINT_COUNT as f32)as i32,
-                    ((boid.position.1/ARENA_SIZE)*POINT_COUNT as f32)as i32,
-                );
+            let here = I32x2{
+                    x:((boid.position.x/ARENA_SIZE)*POINT_COUNT as f32)as i32,
+                    y:((boid.position.y/ARENA_SIZE)*POINT_COUNT as f32)as i32,
+            };
             
             for i in [(0_i32,0_i32), (-1_i32,0_i32), (1_i32,0_i32), (0_i32,1_i32), (0_i32,-1_i32)] {
                 if !self.points.contains_key(&(
-                    ((boid.position.0/ARENA_SIZE)*POINT_COUNT as f32)as i32 + i.0,
-                    ((boid.position.1/ARENA_SIZE)*POINT_COUNT as f32)as i32 + i.1,
+                    ((boid.position.x/ARENA_SIZE)*POINT_COUNT as f32)as i32 + i.0,
+                    ((boid.position.y/ARENA_SIZE)*POINT_COUNT as f32)as i32 + i.1,
                 )) {
                     continue;
                 }
                 assert!(self.points.contains_key(&(
-                    ((boid.position.0/ARENA_SIZE)*POINT_COUNT as f32)as i32 + i.0,
-                    ((boid.position.1/ARENA_SIZE)*POINT_COUNT as f32)as i32 + i.1,
+                    ((boid.position.x/ARENA_SIZE)*POINT_COUNT as f32)as i32 + i.0,
+                    ((boid.position.y/ARENA_SIZE)*POINT_COUNT as f32)as i32 + i.1,
                 )));
                 nearby.extend_from_slice(
                     self.points.get(&(
-                    ((boid.position.0/ARENA_SIZE)*POINT_COUNT as f32)as i32 + i.0,
-                    ((boid.position.1/ARENA_SIZE)*POINT_COUNT as f32)as i32 + i.1,
+                    ((boid.position.x/ARENA_SIZE)*POINT_COUNT as f32)as i32 + i.0,
+                    ((boid.position.y/ARENA_SIZE)*POINT_COUNT as f32)as i32 + i.1,
                     )).unwrap().as_slice()
             );
                 
@@ -193,91 +214,96 @@ impl WindowHandler for MyWindowHandler {
                 
                 
             }
-            
-            let mut average = (0.0,0.0);
+            let mut average = F32x2{x:0.0,y:0.0};
+            // let average = nearby.iter().map(|x|boids_slice[*x].position).sum();
             
             for k in &nearby {
                 #[cfg(not(debug_assertions))]{assert!(*k < boids_slice.len())};
-                average.0 +=boids_slice[*k].position.0 as f32;
-                average.1 += boids_slice[*k].position.1 as f32;
+                average += boids_slice[*k].position;
             }
-            average.0 /= nearby.len() as f32;
-            average.1 /= nearby.len() as f32;
-
+            average *= 1.0/nearby.len() as f32;
             
 
 
             for j in nearby.iter().take(GROUP_SIZE as usize) {
 
                 let other = &boids_slice[*j];
-                let dx = (other.position.0 - boid.position.0).abs();
-                let dy = (other.position.1 - boid.position.1).abs();
+                let dx = (other.position.x - boid.position.x).abs();
+                let dy = (other.position.y - boid.position.y).abs();
                 if dx < GROUP_SPACING*2.0 && dy < GROUP_SPACING*2.0 {
-
-                    deflect.0 += other.velocity.0 as f32;
-                    deflect.1 += other.velocity.1 as f32;
+                    deflect += other.velocity.into()
                 }
             }
 
-            vx += (GROUP_SPACING-(average.0 - boid.position.0)) * BUNCH_UP;
-            vy +=  (GROUP_SPACING-(average.0 - boid.position.0)) * BUNCH_UP;
+            v += (VEC_GROUP_SPACING-(average - boid.position)) * BUNCH_UP;
+            // v.y +=  (GROUP_SPACING-(average.x - boid.position.x)) * BUNCH_UP;
             
-            // vx -= (20.0-(average.0 - boid.position.0)) * FOLLOW;
-            // vy -= (20.0-(average.1 - boid.position.1)) * FOLLOW;
+            // vx -= (20.0-(average.0 - boid.position.x)) * FOLLOW;
+            // vy -= (20.0-(average.1 - boid.position.y)) * FOLLOW;
             
             
-            vx += (ARENA_SIZE/2.0 - boid.position.0) * CENTER_ATTRACTION;
-            vy += (ARENA_SIZE/2.0 - boid.position.1) * CENTER_ATTRACTION;
+            v += (VEC_ARENA_SIZE*0.5 - boid.position) * CENTER_ATTRACTION;
+            // v.y += (ARENA_SIZE/2.0 - boid.position.y) * CENTER_ATTRACTION;
 
 
-            vx += deflect.0 as f32 * GROUP_MOVEMENT;
-            vy += deflect.1 as f32 * GROUP_MOVEMENT;
+            v += deflect * GROUP_MOVEMENT;
+            // v.y += deflect.y as f32 * GROUP_MOVEMENT;
             
             
             if nearby.len() > GROUP_SIZE as usize {
-                vx += self.rand.gen_i8() as f32 * RANDOMNESS*10.0;
-                vy += self.rand.gen_i8() as f32 * RANDOMNESS*10.0;
+                v.x += self.rand.gen_i8() as f32 * RANDOMNESS*10.0;
+                v.y += self.rand.gen_i8() as f32 * RANDOMNESS*10.0;
             }
 
             
 
-            vx += (self.rand.gen_i8() / 10) as f32 * RANDOMNESS;
-            vy += (self.rand.gen_i8() / 10) as f32 * RANDOMNESS;
+            v.x += (self.rand.gen_i8() / 10) as f32 * RANDOMNESS;
+            v.y += (self.rand.gen_i8() / 10) as f32 * RANDOMNESS;
 
             
 
-            let velocity_length = (vx.powi(2) + vy.powi(2)).sqrt();
-            let (vx,vy) = (vx / velocity_length, vy / velocity_length);
-            boid.velocity.0 = (vx * 100.0) as i8;
-            boid.velocity.1 = (vy * 100.0) as i8;
+            let velocity_length = (v.x.powi(2) + v.y.powi(2)).sqrt();
+            let v =v* (1.0/velocity_length);
+            // boid.velocity.0 = (vx * 100.0) as i8;
+            // boid.velocity.1 = (vy * 100.0) as i8;
 
-            boid.position.0 += (boid.velocity.0 as f32 / 100.0)*SPEED;
-            boid.position.1 += (boid.velocity.1 as f32 / 100.0)*SPEED;
-            boid.position.0 = boid.position.0.min(ARENA_SIZE).max(0.0);
-            boid.position.1 = boid.position.1.min(ARENA_SIZE).max(0.0);
+            boid.velocity = I8x2 {
+                x:(v.x * 100.0) as i8,
+                y:(v.y * 100.0) as i8,
+            };
 
-            if boid.position.0 == ARENA_SIZE || boid.position.0 == 0.0 {
-                boid.velocity.0 *= -1;
+            // println!("{:?}", boid.velocity);
+
+
+            let vel: F32x2 = boid.velocity.into();
+            boid.position += vel * (1.0/100.0) * SPEED;
+            boid.position.x = boid.position.x.min(ARENA_SIZE).max(0.0);
+            boid.position.y = boid.position.y.min(ARENA_SIZE).max(0.0);
+
+            if boid.position.x == ARENA_SIZE || boid.position.x == 0.0 {
+                boid.velocity.x *= -1;
             }
-            if boid.position.1 == ARENA_SIZE || boid.position.1 == 0.0 {
-                boid.velocity.1 *= -1;
+            if boid.position.y == ARENA_SIZE || boid.position.y == 0.0 {
+                boid.velocity.y *= -1;
             }
 
-            if new_values.contains_key(&here) {
-                new_values.get_mut(&here).unwrap().push(i);
+            if new_values.contains_key(&(here.x,here.y)) {
+                new_values.get_mut(&(here.x,here.y)).unwrap().push(i);
             } else {
-                new_values.insert(here, vec![i]);
+                new_values.insert((here.x,here.y), vec![i]);
             }
+
+            // println!("{:?}",v);
 
             if boid.current_point != here {
-                if let Some(list) = self.points.get_mut(&boid.current_point) {
+                if let Some(list) = self.points.get_mut(&(boid.current_point.x,boid.current_point.y)) {
                     list.retain(|x| x!=&i);
                 }
-                if let Some(new) = self.points.get_mut(&here) {
+                if let Some(new) = self.points.get_mut(&(here.x,here.y)) {
                     new.push(i);
                     boid.current_point = here;
                 }else {
-                    self.points.insert(here, vec![i]);
+                    self.points.insert((here.x,here.y), vec![i]);
                     boid.current_point = here;
                 }
             }
@@ -286,7 +312,7 @@ impl WindowHandler for MyWindowHandler {
             
             
             
-            graphics.draw_rectangle(Rectangle::from_tuples(((boid.position.0)*5.0+20.0-BOID_SIZE/2.0,(boid.position.1)*5.0+20.0-BOID_SIZE/2.0), ((boid.position.0)*5.0+20.0+BOID_SIZE/2.0,(boid.position.1)*5.0+20.0+BOID_SIZE/2.0)), Color::BLUE);
+            graphics.draw_rectangle(Rectangle::from_tuples(((boid.position.x)*5.0+20.0-BOID_SIZE/2.0,(boid.position.y)*5.0+20.0-BOID_SIZE/2.0), ((boid.position.x)*5.0+20.0+BOID_SIZE/2.0,(boid.position.y)*5.0+20.0+BOID_SIZE/2.0)), Color::BLUE);
 
         }
 
