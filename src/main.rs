@@ -1,16 +1,22 @@
 use core::slice;
 use std::collections::HashMap;
+use std::process::exit;
 use std::time::Instant;
 use mimalloc::MiMalloc;
 
+#[cfg(not(feature = "dhat-heap"))]
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
+
+
 
 // extern crate fxhash;
 use rustc_hash::FxHashMap;
 use micromath::F32;
 use micromath::vector::{F32x2, I8x2, I32x2};
 use speedy2d::color::Color;
+
+
 
 use speedy2d::shape::Rectangle;
 use speedy2d::window::{WindowHandler, WindowHelper};
@@ -20,21 +26,28 @@ use turborand::prelude::*;
 use rayon::prelude::*;
 
 #[cfg(debug_assertions)]
-const BOID_COUNT: usize = 1000;
+const BOID_COUNT: usize = 500;
 // if in release mode
 #[cfg(not(debug_assertions))]
-const BOID_COUNT: usize = 50000;
+const BOID_COUNT: usize = 30000;
 
+#[cfg(feature = "dhat-heap")]
+#[global_allocator]
+static ALLOC: dhat::Alloc = dhat::Alloc;
 
 
 const ARENA_SIZE: f32 = 120.0;
+
+// #[cfg(not(debug_assertions))]
+// use quit;
 
 const VEC_ARENA_SIZE: F32x2 = F32x2{
     x: ARENA_SIZE,
     y: ARENA_SIZE
 };
 
-const BUNCH_UP: f32 = 5.6;
+// higher numbers = strengenthes effect of group spaceing
+const BUNCH_UP: f32 = 1.1;
 
 const SPEED:f32= 0.6;
 
@@ -44,20 +57,16 @@ const INERTIA: f32 = 25.1;
 
 const POINT_COUNT: usize = 100;
 
-const RANDOMNESS: f32 = 40.1;
+const RANDOMNESS: f32 = 80.1;
 
-const GROUP_SIZE: i32 = 15;
+const GROUP_SIZE: i32 = 8;
 
-const GROUP_SPACING: f32 = 1.1;
+const GROUP_SPACING: f32 = 80.1;
 
-const GROUP_MOVEMENT: f32 = 3.8;
+const GROUP_MOVEMENT: f32 = 3.4;
 
-// const VEC_GROUP_MOVEMENT: F32x2 = F32x2{
-//     x:GROUP_MOVEMENT,
-//     y:GROUP_MOVEMENT
-// };
 
-const CENTER_ATTRACTION: f32 = 2.1;
+const CENTER_ATTRACTION: f32 = 1.1;
 
 const VEC_GROUP_SPACING: F32x2 = F32x2{
     x: GROUP_SPACING,
@@ -106,11 +115,21 @@ impl Boid {
     }
 }
 
+
+
 fn main() {
+
+    #[cfg(feature = "dhat-heap")]
+    let _profiler = dhat::Profiler::new_heap();
+
     let rand = Rng::new();
-    let window = Window::new_centered("Title", (650, 640)).unwrap();
+    let window = Window::new_centered(format!("Boids {}", BOID_COUNT), (650, 640)).unwrap();
     let map:FxHashMap<(i32,i32), Vec<usize>> = FxHashMap::default();
-    let boids = vec![Boid::new(); BOID_COUNT];
+    
+    let mut boids = vec![Boid::new(); BOID_COUNT];
+
+    boids.shrink_to_fit();
+
     window.run_loop(MyWindowHandler {
         frame: Instant::now(),
         boids: boids,
@@ -127,12 +146,10 @@ struct MyWindowHandler {
 }
 
 impl WindowHandler for MyWindowHandler {
-    #[inline(always)]
+    // #[inline(always)]
     fn on_draw(&mut self, helper: &mut WindowHelper, graphics: &mut Graphics2D) {
         // helper.set_resizable(false);
-        graphics.set_clip(None);
         graphics.clear_screen(Color::from_rgb(0.8, 0.9, 1.0));
-        graphics.draw_line((0.0, 0.0), (32.0, 0.0), 4.0, Color::GREEN);
         graphics.draw_line(
             (0.0, 0.0),
             (2.0 * self.frame.elapsed().as_millis() as f32, 0.0),
@@ -160,7 +177,9 @@ impl WindowHandler for MyWindowHandler {
         self.frame = Instant::now();
 
         let mut boid = Boid::new();
-
+        let mut deflect;
+        let mut nearby = vec![];
+        let mut list = vec![];
 
         // create slice of self.boids
 
@@ -170,8 +189,8 @@ impl WindowHandler for MyWindowHandler {
         
         for i in 0..BOID_COUNT {
 
-            #[cfg(not(debug_assertions))]{assert!(i < boids_slice.len());}
-
+            // #[cfg(not(debug_assertions))]{assert!(i < boids_slice.len());}
+            
             boid.clone_from(&boids_slice[i]);
             // let mut boid = self.boids[i].clone();
             let mut v:F32x2= boid.velocity.into();
@@ -185,8 +204,8 @@ impl WindowHandler for MyWindowHandler {
 
             // get pixel color at current position from texture (an array of &[u8])
 
-            let mut deflect = F32x2{x:0.0,y:0.0};
-            let mut nearby = vec![];
+            deflect = F32x2{x:0.0,y:0.0};
+            nearby.clear();
             let here = I32x2{
                     x:((boid.position.x/ARENA_SIZE)*POINT_COUNT as f32)as i32,
                     y:((boid.position.y/ARENA_SIZE)*POINT_COUNT as f32)as i32,
@@ -199,10 +218,10 @@ impl WindowHandler for MyWindowHandler {
                 )) {
                     continue;
                 }
-                assert!(self.points.contains_key(&(
-                    ((boid.position.x/ARENA_SIZE)*POINT_COUNT as f32)as i32 + i.0,
-                    ((boid.position.y/ARENA_SIZE)*POINT_COUNT as f32)as i32 + i.1,
-                )));
+                // assert!(self.points.contains_key(&(
+                //     ((boid.position.x/ARENA_SIZE)*POINT_COUNT as f32)as i32 + i.0,
+                //     ((boid.position.y/ARENA_SIZE)*POINT_COUNT as f32)as i32 + i.1,
+                // )));
                 nearby.extend_from_slice(
                     self.points.get(&(
                     ((boid.position.x/ARENA_SIZE)*POINT_COUNT as f32)as i32 + i.0,
@@ -210,31 +229,32 @@ impl WindowHandler for MyWindowHandler {
                     )).unwrap().as_slice()
             );
                 
-                nearby.truncate(50);
-                
+                nearby.truncate(GROUP_SIZE as usize * 4);
                 
             }
             let mut average = F32x2{x:0.0,y:0.0};
-            // let average = nearby.iter().map(|x|boids_slice[*x].position).sum();
+            // // let average = nearby.iter().map(|x|boids_slice[*x].position).sum();
             
-            for k in &nearby {
-                #[cfg(not(debug_assertions))]{assert!(*k < boids_slice.len())};
-                average += boids_slice[*k].position;
-            }
-            average *= 1.0/nearby.len() as f32;
-            
-
-
-            for j in nearby.iter().take(GROUP_SIZE as usize) {
-
+            for (i,j) in nearby.iter().enumerate() {
+                
+                #[cfg(not(debug_assertions))]{assert!(*j < boids_slice.len())};
+                average += boids_slice[*j].position;
+                if i < GROUP_SIZE as usize {
                 let other = &boids_slice[*j];
                 let dx = (other.position.x - boid.position.x).abs();
                 let dy = (other.position.y - boid.position.y).abs();
                 if dx < GROUP_SPACING*2.0 && dy < GROUP_SPACING*2.0 {
                     deflect += other.velocity.into()
                 }
+                }
             }
-
+            
+            
+            
+            // for j in nearby.iter().take(GROUP_SIZE as usize) {
+            // }
+            average *= 1.0/nearby.len() as f32;
+            
             v += (VEC_GROUP_SPACING-(average - boid.position)) * BUNCH_UP;
             // v.y +=  (GROUP_SPACING-(average.x - boid.position.x)) * BUNCH_UP;
             
@@ -250,10 +270,7 @@ impl WindowHandler for MyWindowHandler {
             // v.y += deflect.y as f32 * GROUP_MOVEMENT;
             
             
-            if nearby.len() > GROUP_SIZE as usize {
-                v.x += self.rand.gen_i8() as f32 * RANDOMNESS*10.0;
-                v.y += self.rand.gen_i8() as f32 * RANDOMNESS*10.0;
-            }
+
 
             
 
@@ -287,6 +304,13 @@ impl WindowHandler for MyWindowHandler {
                 boid.velocity.y *= -1;
             }
 
+            // if boid.position.x == ARENA_SIZE || boid.position.x == 0.0 {
+            //     boid.velocity.x *= -1;
+            // }
+            // if boid.position.y == ARENA_SIZE || boid.position.y == 0.0 {
+            //     boid.velocity.y *= -1;
+            // }
+
             if new_values.contains_key(&(here.x,here.y)) {
                 new_values.get_mut(&(here.x,here.y)).unwrap().push(i);
             } else {
@@ -296,6 +320,8 @@ impl WindowHandler for MyWindowHandler {
             // println!("{:?}",v);
 
             if boid.current_point != here {
+                list.clear();
+                list = self.points.get_mut(&(boid.current_point.x,boid.current_point.y)).unwrap_or(&mut list).to_vec();
                 if let Some(list) = self.points.get_mut(&(boid.current_point.x,boid.current_point.y)) {
                     list.retain(|x| x!=&i);
                 }
@@ -318,13 +344,30 @@ impl WindowHandler for MyWindowHandler {
 
 
         
+
+        
         // self.points.clear();
 
         // mem::swap(&mut self.points, &mut new_values);
             
 
-        
-
+    
         helper.request_redraw();
     }
+
+    #[cfg(feature = "dhat-heap")]
+    fn on_keyboard_char(
+        &mut self,
+        helper: &mut WindowHelper<()>,
+        unicode_codepoint: char
+    ) {
+        // kill program and drop all values
+        
+        if unicode_codepoint == 'q' {
+            // enable quit to use adhoc debugger
+            // quit::with_code(1);
+        }
+    }
+
+    
 }

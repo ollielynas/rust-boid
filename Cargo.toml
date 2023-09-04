@@ -6,6 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+dhat = "0.3.2"
 embedded-time = "0.12.1"
 micromath = {version = "2.0.0", features=["vector"]}
 mimalloc = "0.1.38"
@@ -15,9 +16,15 @@ speedy2d = "1.12.0"
 static_assertions = "1.1.0"
 turborand = "0.10.0"
 
+# quit = "2.0.0" # only enable if using the memory debugger thigy
+
 
 [profile.release]
+debug = 1
 lto = true
 opt-level = 3
 codegen-units = 1
 panic = "abort"
+
+[features]
+dhat-heap = []    # if you are doing heap profiling
