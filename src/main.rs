@@ -29,7 +29,7 @@ use rayon::prelude::*;
 const BOID_COUNT: usize = 500;
 // if in release mode
 #[cfg(not(debug_assertions))]
-const BOID_COUNT: usize = 30000;
+const BOID_COUNT: usize = 10000;
 
 #[cfg(feature = "dhat-heap")]
 #[global_allocator]
@@ -37,6 +37,7 @@ static ALLOC: dhat::Alloc = dhat::Alloc;
 
 
 const ARENA_SIZE: f32 = 120.0;
+use std::env;
 
 // #[cfg(not(debug_assertions))]
 // use quit;
@@ -47,7 +48,7 @@ const VEC_ARENA_SIZE: F32x2 = F32x2{
 };
 
 // higher numbers = strengenthes effect of group spaceing
-const BUNCH_UP: f32 = 1.1;
+const BUNCH_UP: f32 = 3.1;
 
 const SPEED:f32= 0.6;
 
@@ -55,46 +56,23 @@ const BOID_SIZE : f32 = 1.0;
 
 const INERTIA: f32 = 25.1;
 
-const POINT_COUNT: usize = 100;
+const POINT_COUNT: usize = 500;
 
-const RANDOMNESS: f32 = 80.1;
+const RANDOMNESS: f32 = 8.1;
 
 const GROUP_SIZE: i32 = 8;
 
-const GROUP_SPACING: f32 = 80.1;
+const GROUP_SPACING: f32 = 8.1;
 
 const GROUP_MOVEMENT: f32 = 3.4;
 
 
-const CENTER_ATTRACTION: f32 = 1.1;
+const CENTER_ATTRACTION: f32 = 4.1;
 
 const VEC_GROUP_SPACING: F32x2 = F32x2{
     x: GROUP_SPACING,
     y: GROUP_SPACING
 };
-
-
-// const ARENA_SIZE: f32 = 100.0;
-
-// const BUNCH_UP: f32 = 3.0;
-
-// const SPEED:f32= 0.3;
-
-// const BOID_SIZE : f32 = 1.0;
-
-// const INERTIA: f32 = 22.1;
-
-// const POINT_COUNT: usize = 100;
-
-// const RANDOMNESS: f32 = 20.1;
-
-// const GROUP_SIZE: i32 = 69;
-
-// const GROUP_SPACING: f32 = 0.01;
-
-// const GROUP_MOVEMENT: f32 = 29.8;
-
-// const CENTER_ATTRACTION: f32 = 17.1;
 
 
 
@@ -126,12 +104,12 @@ fn main() {
     let window = Window::new_centered(format!("Boids {}", BOID_COUNT), (650, 640)).unwrap();
     let map:FxHashMap<(i32,i32), Vec<usize>> = FxHashMap::default();
     
-    let mut boids = vec![Boid::new(); BOID_COUNT];
 
+    let mut boids = vec![Boid::new(); BOID_COUNT];
     boids.shrink_to_fit();
 
     window.run_loop(MyWindowHandler {
-        frame: Instant::now(),
+        // frame: Instant::now(),
         boids: boids,
         rand: rand,
         points: map,
@@ -139,7 +117,7 @@ fn main() {
 }
 
 struct MyWindowHandler {
-    frame: Instant,
+    // frame: Instant,
     boids: Vec<Boid>,
     rand: Rng,
     points: FxHashMap<(i32,i32), Vec<usize>>,
@@ -150,12 +128,12 @@ impl WindowHandler for MyWindowHandler {
     fn on_draw(&mut self, helper: &mut WindowHelper, graphics: &mut Graphics2D) {
         // helper.set_resizable(false);
         graphics.clear_screen(Color::from_rgb(0.8, 0.9, 1.0));
-        graphics.draw_line(
-            (0.0, 0.0),
-            (2.0 * self.frame.elapsed().as_millis() as f32, 0.0),
-            4.0,
-            Color::BLACK,
-        );
+        // graphics.draw_line(
+        //     (0.0, 0.0),
+        //     (2.0 * self.frame.elapsed().as_millis() as f32, 0.0),
+        //     4.0,
+        //     Color::BLACK,
+        // );
         
 
         
@@ -174,7 +152,7 @@ impl WindowHandler for MyWindowHandler {
         let mut new_values: HashMap<(i32,i32), Vec<usize>> = HashMap::new();
 
 
-        self.frame = Instant::now();
+        // self.frame = Instant::now();
 
         let mut boid = Boid::new();
         let mut deflect;
@@ -364,8 +342,9 @@ impl WindowHandler for MyWindowHandler {
         // kill program and drop all values
         
         if unicode_codepoint == 'q' {
-            // enable quit to use adhoc debugger
-            // quit::with_code(1);
+
+            helper.terminate_loop();
+            // helper.
         }
     }
 
